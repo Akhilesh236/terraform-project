@@ -1,0 +1,176 @@
+resource "aws_vpc" "vpc1"{
+  cidr_block=var.vpc_cidr
+  enable_dns_hostnames=true
+  instance_tenancy="default"
+  tags={
+   Name=var.vpc_name
+   env=var.env
+  }
+}
+resource "aws_subnet" "subnet1"{
+  count=length(var.azs1)
+  cidr_block=element(var.public_cidr,count.index)
+  availability_zone=element(var.azs1,count.index)
+  vpc_id=aws_vpc.vpc1.id
+  map_public_ip_on_launch=true
+  tags={
+   Name="pub-sub${count.index+1}"
+   env=var.env
+  }
+}  
+resource "aws_subnet" "subnet2"{
+  count=length(var.azs2)
+  cidr_block=element(var.private_cidr,count.index)
+  availability_zone=element(var.azs2,count.index)
+  vpc_id=aws_vpc.vpc1.id
+  tags={
+   Name="private-sub${count.index+1}"
+   env=var.env
+  }
+}
+resource "aws_internet_gateway" "igw1"{
+  vpc_id=aws_vpc.vpc1.id
+  tags={
+   Name=var.igw_name
+   env=var.env
+  }
+}
+resource "aws_route_table" "rt1"{
+  vpc_id=aws_vpc.vpc1.id
+  tags={
+   Name=var.rt1_name
+   env=var.env
+  }
+  route {
+   cidr_block="0.0.0.0/0"
+   gateway_id=aws_internet_gateway.igw1.id
+  }
+}
+resource "aws_route_table_association" "rt1ass"{
+  count=length(var.public_cidr)
+  subnet_id=element(aws_subnet.subnet1.*.id,count.index)
+  route_table_id=aws_route_table.rt1.id
+}
+resource "aws_eip" "eip1"{
+  vpc=true
+  tags={
+   Name=var.eip_name
+   env=var.env
+  }
+}
+resource "aws_nat_gateway" "nat1"{
+  allocation_id=aws_eip.eip1.id
+  subnet_id=aws_subnet.subnet1[1].id
+  tags={
+   Name=var.nat1_name
+   env=var.env
+  }
+}  
+resource "aws_route_table" "rt2"{
+  vpc_id=aws_vpc.vpc1.id
+  tags={
+   Name=var.rt2_name
+   env=var.env
+  }
+  route {
+   cidr_block="0.0.0.0/0"
+   gateway_id=aws_nat_gateway.nat1.id
+  }
+}
+resource "aws_route_table_association" "rt2ass"{
+  count=length(var.private_cidr)
+  subnet_id=element(aws_subnet.subnet2.*.id,count.index)
+  route_table_id=aws_route_table.rt2.id
+}
+resource "aws_security_group" "sg1"{
+  vpc_id=aws_vpc.vpc1.id
+  name="prod-sg"
+  tags={
+   Name=var.sg_name
+   env=var.env
+  }
+ ingress {
+  from_port=22
+  to_port=22
+  protocol="tcp"
+  cidr_blocks=["0.0.0.0/0"]
+ }  
+ ingress {
+  from_port=80
+  to_port=80
+  protocol="tcp"
+  cidr_blocks=["0.0.0.0/0"]
+ } 
+ egress {
+  from_port=0
+  to_port=0
+  protocol="-1"
+  cidr_blocks=["0.0.0.0/0"]
+ }  
+}
+resource "aws_instance" "instance1"{
+  ami=var.ami
+  instance_type=var.instance_type
+  key_name=var.key_name
+  subnet_id=aws_subnet.subnet1[1].id
+  security_groups=[aws_security_group.sg1.id]
+  user_data=file("file.sh")
+  tags={
+   Name=var.instance1_name
+   env=var.env
+  }
+}  
+resource "aws_instance" "instance2"{
+  ami=var.ami
+  instance_type=var.instance_type
+  key_name=var.key_name
+  subnet_id=aws_subnet.subnet2[1].id
+  security_groups=[aws_security_group.sg1.id]
+  tags={
+   Name=var.instance2_name
+   env=var.env
+  }
+}
+
+variable "vpc_cidr"{}
+variable "vpc_name"{}
+variable "env"{}
+variable "igw_name"{}
+variable "rt1_name"{}
+variable "rt2_name"{}
+variable "eip_name"{}
+variable "nat1_name"{}
+variable "sg_name"{}
+variable "instance1_name"{}
+variable "instance2_name"{}
+variable "public_cidr"{type=list}
+variable "private_cidr"{type=list}
+variable "azs1"{type=list}
+variable "azs2"{type=list}
+variable "ami"{}
+variable "instance_type"{}
+variable "key_name"{}
+
+ami="ami-08bc77a2c7eb2b1da"
+instance_type="t2.micro"
+key_name="26-2-2020"
+vpc_cidr="10.11.0.0/16"
+vpc_name="prod-vpc"
+env="prodution"
+igw_name="prod-igw"
+rt1_name="prod-rt1"
+rt2_name="prod-rt2"
+eip_name="prod-eip"
+nat1_name="prod-nat"
+sg_name="prod-sg"
+instance1_name="prod-i1"
+instance2_name="prod-i2"
+public_cidr=["10.11.0.0/24","10.11.1.0/24","10.11.2.0/24"]
+private_cidr=["10.11.3.0/24","10.11.4.0/24","10.11.5.0/24"]
+azs1=["us-east-1a","us-east-1b","us-east-1c"]
+azs2=["us-east-1d","us-east-1e","us-east-1f"]
+
+
+
+ 
+    
